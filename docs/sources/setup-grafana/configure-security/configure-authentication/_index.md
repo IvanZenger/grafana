@@ -228,3 +228,12 @@ protected_roles = server_admins org_admins
 ```
 
 The value of `protected_roles` should be a list of roles to protect, separated by spaces. Valid roles are `viewers`, `editors`, `org_admins`, `server_admins`, and `all` (a superset of the other roles).
+
+### Grafana Admin to Org Admins
+
+By default, Grafana Admins are not admins in all orgs. You can enforce `Admin` role for Grafana admins with:
+
+```bash
+[auth]
+grafana_admin_to_org_admins = true
+```

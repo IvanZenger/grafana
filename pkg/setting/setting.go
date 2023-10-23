@@ -285,6 +285,7 @@ type Cfg struct {
 	AdminEmail                   string
 	DisableLoginForm             bool
 	SignoutRedirectUrl           string
+	GrafanaAdminToOrgAdmins      bool
 	// Not documented & not supported
 	// stand in until a more complete solution is implemented
 	AuthConfigUIAdminAccess bool
@@ -1582,6 +1583,7 @@ func readAuthSettings(iniFile *ini.File, cfg *Cfg) (err error) {
 
 	cfg.DisableLoginForm = auth.Key("disable_login_form").MustBool(false)
 	DisableSignoutMenu = auth.Key("disable_signout_menu").MustBool(false)
+	cfg.GrafanaAdminToOrgAdmins = auth.Key("grafana_admin_to_org_admins").MustBool(false)
 
 	// Deprecated
 	cfg.OAuthAutoLogin = auth.Key("oauth_auto_login").MustBool(false)

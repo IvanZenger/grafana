@@ -156,7 +156,10 @@ func ProvideService(
 	orgUserSyncService := sync.ProvideOrgSync(userService, orgService, accessControlService)
 	s.RegisterPostAuthHook(userSyncService.SyncUserHook, 10)
 	s.RegisterPostAuthHook(userSyncService.EnableUserHook, 20)
-	s.RegisterPostAuthHook(orgUserSyncService.SyncOrgRolesHook, 30)
+	s.RegisterPostAuthHook(orgUserSyncService.GrafanaAdminOrgRolesHook, 29)
+	if s.cfg.GrafanaAdminToOrgAdmins {
+		s.RegisterPostAuthHook(orgUserSyncService.SyncOrgRolesHook, 30)
+	}
 	s.RegisterPostAuthHook(userSyncService.SyncLastSeenHook, 120)
 
 	if features.IsEnabledGlobally(featuremgmt.FlagAccessTokenExpirationCheck) {
