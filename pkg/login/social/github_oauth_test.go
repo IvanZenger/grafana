@@ -11,7 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
+	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/org"
+	"github.com/grafana/grafana/pkg/services/org/orgtest"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -124,6 +127,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 		settingSkipOrgRoleSync   bool
 		roleAttributePath        string
 		autoAssignOrgRole        string
+		orgRolesAttributePath    string
 		want                     *BasicUserInfo
 		wantErr                  bool
 	}{
@@ -219,6 +223,22 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 				Groups: []string{"https://github.com/orgs/github/teams/justice-league", "@github/justice-league"},
 			},
 		},
+		{
+			name:                  "Handle Org Roles on ",
+			roleAttributePath:     "'None'",
+			orgRolesAttributePath: "[{\"OrgName\": 'Org 4', \"Role\": 'Editor'}]",
+			userRawJSON:           testGHUserJSON,
+			userTeamsRawJSON:      testGHUserTeamsJSON,
+			want: &BasicUserInfo{
+				Id:       "1",
+				Name:     "monalisa octocat",
+				Email:    "octocat@github.com",
+				Login:    "octocat",
+				Role:     "None",
+				OrgRoles: map[int64]roletype.RoleType{4: "Editor"},
+				Groups:   []string{"https://github.com/orgs/github/teams/justice-league", "@github/justice-league"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -240,14 +260,15 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			defer server.Close()
 
 			s, err := NewGitHubProvider(map[string]any{
-				"allowed_organizations": "",
-				"api_url":               server.URL + "/user",
-				"team_ids":              "",
-				"role_attribute_path":   tt.roleAttributePath,
+				"allowed_organizations":    "",
+				"api_url":                  server.URL + "/user",
+				"team_ids":                 "",
+				"role_attribute_path":      tt.roleAttributePath,
+				"org_roles_attribute_path": tt.orgRolesAttributePath,
 			}, &setting.Cfg{
 				AutoAssignOrgRole:     tt.autoAssignOrgRole,
 				GitHubSkipOrgRoleSync: tt.settingSkipOrgRoleSync,
-			}, nil, featuremgmt.WithFeatures())
+			}, &orgtest.FakeOrgService{ExpectedOrg: &org.Org{ID: 4}}, featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
 			token := &oauth2.Token{
