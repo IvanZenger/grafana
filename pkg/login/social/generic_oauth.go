@@ -13,6 +13,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
 )
@@ -36,7 +37,7 @@ type SocialGenericOAuth struct {
 	skipOrgRoleSync      bool
 }
 
-func NewGenericOAuthProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialGenericOAuth, error) {
+func NewGenericOAuthProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager) (*SocialGenericOAuth, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -44,7 +45,7 @@ func NewGenericOAuthProvider(settings map[string]any, cfg *setting.Cfg, features
 
 	config := createOAuthConfig(info, cfg, genericOAuthProviderName)
 	provider := &SocialGenericOAuth{
-		SocialBase:           newSocialBase(genericOAuthProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:           newSocialBase(genericOAuthProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		apiUrl:               info.ApiUrl,
 		teamsUrl:             info.TeamsUrl,
 		emailAttributeName:   info.EmailAttributeName,
@@ -186,6 +187,15 @@ func (s *SocialGenericOAuth) UserInfo(ctx context.Context, client *http.Client, 
 				if s.allowAssignGrafanaAdmin {
 					userInfo.IsGrafanaAdmin = &grafanaAdmin
 				}
+			}
+		}
+
+		if len(userInfo.OrgRoles) == 0 && !s.skipOrgRoleSync {
+			orgRoles, err := s.extractOrgRoles(ctx, data.rawJSON, []string{})
+			if err != nil {
+				s.log.Warn("Failed to extract org roles", "err", err)
+			} else {
+				userInfo.OrgRoles = orgRoles
 			}
 		}
 

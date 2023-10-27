@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/remotecache"
 	"github.com/grafana/grafana/pkg/infra/usagestats"
+	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/supportbundles"
@@ -75,6 +76,7 @@ type OAuthInfo struct {
 	UsePKCE                 bool              `mapstructure:"use_pkce"`
 	UseRefreshToken         bool              `mapstructure:"use_refresh_token"`
 	Extra                   map[string]string `mapstructure:",remain"`
+	OrgRolesAttributePath   string            `mapstructure:"org_roles_attribute_path"`
 }
 
 func ProvideService(cfg *setting.Cfg,
@@ -82,6 +84,7 @@ func ProvideService(cfg *setting.Cfg,
 	usageStats usagestats.Service,
 	bundleRegistry supportbundles.Service,
 	cache remotecache.CacheStorage,
+	orgService org.Service,
 ) *SocialService {
 	ss := &SocialService{
 		cfg:           cfg,
@@ -110,7 +113,7 @@ func ProvideService(cfg *setting.Cfg,
 			name = grafanaCom
 		}
 
-		conn, err := ss.createOAuthConnector(name, settingsKVs, cfg, features, cache)
+		conn, err := ss.createOAuthConnector(name, settingsKVs, cfg, orgService, features, cache)
 		if err != nil {
 			ss.log.Error("Failed to create OAuth provider", "error", err, "provider", name)
 		}
@@ -130,13 +133,14 @@ type BasicUserInfo struct {
 	Email          string
 	Login          string
 	Role           org.RoleType
+	OrgRoles       map[int64]org.RoleType
 	IsGrafanaAdmin *bool // nil will avoid overriding user's set server admin setting
 	Groups         []string
 }
 
 func (b *BasicUserInfo) String() string {
-	return fmt.Sprintf("Id: %s, Name: %s, Email: %s, Login: %s, Role: %s, Groups: %v",
-		b.Id, b.Name, b.Email, b.Login, b.Role, b.Groups)
+	return fmt.Sprintf("Id: %s, Name: %s, Email: %s, Login: %s, Role: %s, Groups: %v, OrgRoles: %v",
+		b.Id, b.Name, b.Email, b.Login, b.Role, b.Groups, b.OrgRoles)
 }
 
 //go:generate mockery --name SocialConnector --structname MockSocialConnector --outpkg socialtest --filename social_connector_mock.go --output ../socialtest/
@@ -158,17 +162,25 @@ type SocialBase struct {
 	*oauth2.Config
 	info                    *OAuthInfo
 	log                     log.Logger
+	orgService              org.Service
 	allowSignup             bool
 	allowAssignGrafanaAdmin bool
 	allowedDomains          []string
 	allowedGroups           []string
 
-	roleAttributePath   string
-	roleAttributeStrict bool
-	autoAssignOrgRole   string
-	skipOrgRoleSync     bool
-	features            featuremgmt.FeatureManager
-	useRefreshToken     bool
+	roleAttributePath     string
+	roleAttributeStrict   bool
+	orgRolesAttributePath string
+	autoAssignOrgRole     string
+	skipOrgRoleSync       bool
+	features              featuremgmt.FeatureManager
+	useRefreshToken       bool
+}
+
+type OrgRoleMapping struct {
+	OrgID   int64             `json:",string"`
+	OrgName string            `type:"string"`
+	Role    roletype.RoleType `type:"string" required:"true"`
 }
 
 type Error struct {
@@ -200,6 +212,7 @@ type Service interface {
 
 func newSocialBase(name string,
 	config *oauth2.Config,
+	orgService org.Service,
 	info *OAuthInfo,
 	autoAssignOrgRole string,
 	skipOrgRoleSync bool,
@@ -211,12 +224,14 @@ func newSocialBase(name string,
 		Config:                  config,
 		info:                    info,
 		log:                     logger,
+		orgService:              orgService,
 		allowSignup:             info.AllowSignup,
 		allowAssignGrafanaAdmin: info.AllowAssignGrafanaAdmin,
 		allowedDomains:          info.AllowedDomains,
 		allowedGroups:           info.AllowedGroups,
 		roleAttributePath:       info.RoleAttributePath,
 		roleAttributeStrict:     info.RoleAttributeStrict,
+		orgRolesAttributePath:   info.OrgRolesAttributePath,
 		autoAssignOrgRole:       autoAssignOrgRole,
 		skipOrgRoleSync:         skipOrgRoleSync,
 		features:                features,
@@ -293,6 +308,54 @@ func (s *SocialBase) searchRole(rawJSON []byte, groups []string) (org.RoleType, 
 	}
 
 	return "", false
+}
+
+func (s *SocialBase) extractOrgRoles(ctx context.Context, rawJSON []byte, groups []string) (map[int64]org.RoleType, error) {
+	if s.orgRolesAttributePath != "" {
+		orgRoles, err := s.extractOrgRolesFromRaw(ctx, rawJSON)
+		if err != nil || len(orgRoles) > 0 {
+			return orgRoles, err
+		}
+		if groupBytes, err := json.Marshal(groupStruct{groups}); err == nil {
+			return s.extractOrgRolesFromRaw(ctx, groupBytes)
+		}
+	}
+
+	return nil, nil
+}
+
+func (s *SocialBase) extractOrgRolesFromRaw(ctx context.Context, rawJSON []byte) (map[int64]org.RoleType, error) {
+	val, err := s.searchJSONForAttr(s.orgRolesAttributePath, rawJSON)
+	if err != nil {
+		return nil, err
+	}
+	orgRolesRaw, err := json.Marshal(val)
+	if err != nil {
+		return nil, err
+	}
+	orgRoleMappings := []OrgRoleMapping{}
+	err = json.Unmarshal(orgRolesRaw, &orgRoleMappings)
+	if err != nil {
+		return nil, err
+	}
+	orgRoles := make(map[int64]org.RoleType, 0)
+	for _, orgRoleMapping := range orgRoleMappings {
+		if orgRoleMapping.OrgID == 0 && orgRoleMapping.OrgName != "" {
+			getOrgQuery := &org.GetOrgByNameQuery{Name: orgRoleMapping.OrgName}
+			res, err := s.orgService.GetByName(ctx, getOrgQuery)
+			if err != nil {
+				// ignore not existing org
+				s.log.Warn("Unknown organization. Skipping.", "config_option", s.orgRolesAttributePath, "mapping", fmt.Sprintf("%v", orgRoleMapping))
+				continue
+			}
+			orgRoleMapping.OrgID = res.ID
+		} else if orgRoleMapping.OrgID <= 0 {
+			s.log.Warn("Incorrect mapping found. Skipping.", "config_option", s.orgRolesAttributePath, "mapping", fmt.Sprintf("%v", orgRoleMapping))
+			continue
+		}
+		orgRoles[orgRoleMapping.OrgID] = orgRoleMapping.Role
+	}
+	return orgRoles, nil
 }
 
 // defaultRole returns the default role for the user based on the autoAssignOrgRole setting
@@ -502,22 +565,22 @@ func (s *SocialBase) retrieveRawIDToken(idToken any) ([]byte, error) {
 	return rawJSON, nil
 }
 
-func (ss *SocialService) createOAuthConnector(name string, settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager, cache remotecache.CacheStorage) (SocialConnector, error) {
+func (ss *SocialService) createOAuthConnector(name string, settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager, cache remotecache.CacheStorage) (SocialConnector, error) {
 	switch name {
 	case azureADProviderName:
-		return NewAzureADProvider(settings, cfg, features, cache)
+		return NewAzureADProvider(settings, cfg, orgService, features, cache)
 	case genericOAuthProviderName:
-		return NewGenericOAuthProvider(settings, cfg, features)
+		return NewGenericOAuthProvider(settings, cfg, orgService, features)
 	case gitHubProviderName:
-		return NewGitHubProvider(settings, cfg, features)
+		return NewGitHubProvider(settings, cfg, orgService, features)
 	case gitlabProviderName:
-		return NewGitLabProvider(settings, cfg, features)
+		return NewGitLabProvider(settings, cfg, orgService, features)
 	case googleProviderName:
-		return NewGoogleProvider(settings, cfg, features)
+		return NewGoogleProvider(settings, cfg, orgService, features)
 	case grafanaComProviderName:
-		return NewGrafanaComProvider(settings, cfg, features)
+		return NewGrafanaComProvider(settings, cfg, orgService, features)
 	case oktaProviderName:
-		return NewOktaProvider(settings, cfg, features)
+		return NewOktaProvider(settings, cfg, orgService, features)
 	default:
 		return nil, fmt.Errorf("unknown oauth provider: %s", name)
 	}

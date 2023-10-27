@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
 	"github.com/grafana/grafana/pkg/util/errutil"
@@ -49,7 +50,7 @@ var (
 			"User is not a member of one of the required organizations. Please contact identity provider administrator."))
 )
 
-func NewGitHubProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialGithub, error) {
+func NewGitHubProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager) (*SocialGithub, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -62,7 +63,7 @@ func NewGitHubProvider(settings map[string]any, cfg *setting.Cfg, features *feat
 
 	config := createOAuthConfig(info, cfg, gitHubProviderName)
 	provider := &SocialGithub{
-		SocialBase:           newSocialBase(gitHubProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:           newSocialBase(gitHubProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		apiUrl:               info.ApiUrl,
 		teamIds:              teamIds,
 		allowedOrganizations: util.SplitString(info.Extra["allowed_organizations"]),

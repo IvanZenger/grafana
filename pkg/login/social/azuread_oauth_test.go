@@ -675,7 +675,7 @@ func TestSocialAzureAD_UserInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := NewAzureADProvider(tt.fields.providerCfg, tt.fields.cfg, featuremgmt.WithFeatures(), cache)
+			s, err := NewAzureADProvider(tt.fields.providerCfg, tt.fields.cfg, nil, featuremgmt.WithFeatures(), cache)
 			require.NoError(t, err)
 
 			if tt.fields.usGovURL {
@@ -851,7 +851,7 @@ func TestSocialAzureAD_SkipOrgRole(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := NewAzureADProvider(tt.fields.providerCfg, tt.fields.cfg, featuremgmt.WithFeatures(), cache)
+			s, err := NewAzureADProvider(tt.fields.providerCfg, tt.fields.cfg, nil, featuremgmt.WithFeatures(), cache)
 			require.NoError(t, err)
 
 			s.SocialBase.Endpoint.AuthURL = authURL
@@ -946,7 +946,7 @@ func TestSocialAzureAD_InitializeExtraFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := NewAzureADProvider(tc.settings, &setting.Cfg{}, featuremgmt.WithFeatures(), nil)
+			s, err := NewAzureADProvider(tc.settings, &setting.Cfg{}, nil, featuremgmt.WithFeatures(), nil)
 			require.NoError(t, err)
 
 			require.Equal(t, tc.want.forceUseGraphAPI, s.forceUseGraphAPI)

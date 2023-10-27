@@ -12,15 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
+	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/org"
+	"github.com/grafana/grafana/pkg/services/org/orgtest"
 
 	"github.com/grafana/grafana/pkg/setting"
 )
 
 func TestSearchJSONForEmail(t *testing.T) {
 	t.Run("Given a generic OAuth provider", func(t *testing.T) {
-		provider, err := NewGenericOAuthProvider(map[string]any{}, &setting.Cfg{}, featuremgmt.WithFeatures())
+		provider, err := NewGenericOAuthProvider(map[string]any{}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 		require.NoError(t, err)
 
 		tests := []struct {
@@ -105,7 +107,7 @@ func TestSearchJSONForEmail(t *testing.T) {
 
 func TestSearchJSONForGroups(t *testing.T) {
 	t.Run("Given a generic OAuth provider", func(t *testing.T) {
-		provider, err := NewGenericOAuthProvider(map[string]any{}, &setting.Cfg{}, featuremgmt.WithFeatures())
+		provider, err := NewGenericOAuthProvider(map[string]any{}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 		require.NoError(t, err)
 
 		tests := []struct {
@@ -165,7 +167,7 @@ func TestSearchJSONForGroups(t *testing.T) {
 
 func TestSearchJSONForRole(t *testing.T) {
 	t.Run("Given a generic OAuth provider", func(t *testing.T) {
-		provider, err := NewGenericOAuthProvider(map[string]any{}, &setting.Cfg{}, featuremgmt.WithFeatures())
+		provider, err := NewGenericOAuthProvider(map[string]any{}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 		require.NoError(t, err)
 
 		tests := []struct {
@@ -224,9 +226,14 @@ func TestSearchJSONForRole(t *testing.T) {
 }
 
 func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
-	provider, err := NewGenericOAuthProvider(map[string]any{
-		"email_attribute_path": "email",
-	}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	provider, err := NewGenericOAuthProvider(
+		map[string]any{
+			"email_attribute_path": "email",
+		},
+		&setting.Cfg{},
+		&orgtest.FakeOrgService{ExpectedOrg: &org.Org{ID: 4}},
+		featuremgmt.WithFeatures(),
+	)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -236,8 +243,10 @@ func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
 		ResponseBody            any
 		OAuth2Extra             any
 		RoleAttributePath       string
+		OrgRolesAttributePath   string
 		ExpectedEmail           string
 		ExpectedRole            org.RoleType
+		ExpectedOrgRoles        map[int64]org.RoleType
 		ExpectedError           error
 		ExpectedGrafanaAdmin    *bool
 	}{
@@ -451,10 +460,25 @@ func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
 			ExpectedEmail:     "john.doe@example.com",
 			ExpectedRole:      "",
 		},
+		{
+			Name:                    "Given a valid id_token, a valid advanced JMESPath role path, a valid advanced JMESPath org roles path, a valid API response, prefer ID token",
+			SkipOrgRoleSync:         false,
+			AllowAssignGrafanaAdmin: false,
+			ResponseBody:            map[string]any{"info": map[string]any{"roles": []string{"engineering", "SRE"}}},
+			OAuth2Extra:             map[string]any{"id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImpvaG4uZG9lQGV4YW1wbGUuY29tIiwiaW5mbyI6eyJyb2xlcyI6WyJkZXYiLCJlbmdpbmVlcmluZyJdfX0.RmmQfv25eXb4p3wMrJsvXfGQ6EXhGtwRXo6SlCFHRNg"},
+			RoleAttributePath:       "'Viewer'",
+			OrgRolesAttributePath:   "[{\"OrgId\": '2', \"Role\": 'Editor'},{\"OrgName\": 'Org 4', \"Role\": 'Viewer'}]",
+			ExpectedEmail:           "john.doe@example.com",
+			ExpectedRole:            "Viewer",
+			ExpectedOrgRoles:        map[int64]roletype.RoleType{2: org.RoleEditor, 4: org.RoleViewer},
+			ExpectedError:           nil,
+			ExpectedGrafanaAdmin:    nil,
+		},
 	}
 
 	for _, test := range tests {
 		provider.roleAttributePath = test.RoleAttributePath
+		provider.orgRolesAttributePath = test.OrgRolesAttributePath
 		provider.allowAssignGrafanaAdmin = test.AllowAssignGrafanaAdmin
 		provider.skipOrgRoleSync = test.SkipOrgRoleSync
 
@@ -485,6 +509,7 @@ func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
 			require.Equal(t, test.ExpectedEmail, actualResult.Email)
 			require.Equal(t, test.ExpectedEmail, actualResult.Login)
 			require.Equal(t, test.ExpectedRole, actualResult.Role)
+			require.Equal(t, test.ExpectedOrgRoles, actualResult.OrgRoles)
 			require.Equal(t, test.ExpectedGrafanaAdmin, actualResult.IsGrafanaAdmin)
 		})
 	}
@@ -494,7 +519,7 @@ func TestUserInfoSearchesForLogin(t *testing.T) {
 	t.Run("Given a generic OAuth provider", func(t *testing.T) {
 		provider, err := NewGenericOAuthProvider(map[string]any{
 			"login_attribute_path": "login",
-		}, &setting.Cfg{}, featuremgmt.WithFeatures())
+		}, &setting.Cfg{}, orgtest.NewOrgServiceFake(), featuremgmt.WithFeatures())
 		require.NoError(t, err)
 
 		tests := []struct {
@@ -587,7 +612,7 @@ func TestUserInfoSearchesForName(t *testing.T) {
 	t.Run("Given a generic OAuth provider", func(t *testing.T) {
 		provider, err := NewGenericOAuthProvider(map[string]any{
 			"name_attribute_path": "name",
-		}, &setting.Cfg{}, featuremgmt.WithFeatures())
+		}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 		require.NoError(t, err)
 
 		tests := []struct {
@@ -729,7 +754,7 @@ func TestUserInfoSearchesForGroup(t *testing.T) {
 				provider, err := NewGenericOAuthProvider(map[string]any{
 					"groups_attribute_path": test.groupsAttributePath,
 					"api_url":               ts.URL,
-				}, &setting.Cfg{}, featuremgmt.WithFeatures())
+				}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 				require.NoError(t, err)
 
 				token := &oauth2.Token{
@@ -750,7 +775,7 @@ func TestUserInfoSearchesForGroup(t *testing.T) {
 func TestPayloadCompression(t *testing.T) {
 	provider, err := NewGenericOAuthProvider(map[string]any{
 		"email_attribute_path": "email",
-	}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -896,7 +921,7 @@ func TestSocialGenericOAuth_InitializeExtraFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := NewGenericOAuthProvider(tc.settings, &setting.Cfg{}, featuremgmt.WithFeatures())
+			s, err := NewGenericOAuthProvider(tc.settings, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
 			require.Equal(t, tc.want.nameAttributePath, s.nameAttributePath)
