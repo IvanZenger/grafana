@@ -25,7 +25,7 @@ const (
 )
 
 func TestSocialGrafanaCom_UserInfo(t *testing.T) {
-	provider, err := NewGrafanaComProvider(map[string]any{}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	provider, err := NewGrafanaComProvider(map[string]any{}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 	require.NoError(t, err)
 
 	type conf struct {
@@ -122,7 +122,7 @@ func TestSocialGrafanaCom_InitializeExtraFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := NewGrafanaComProvider(tc.settings, &setting.Cfg{}, featuremgmt.WithFeatures())
+			s, err := NewGrafanaComProvider(tc.settings, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
 			require.Equal(t, tc.want.allowedOrganizations, s.allowedOrganizations)

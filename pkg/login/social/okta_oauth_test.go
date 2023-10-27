@@ -109,6 +109,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 					AutoAssignOrgRole:          tt.autoAssignOrgRole,
 					OAuthSkipOrgRoleUpdateSync: false,
 				},
+				nil,
 				featuremgmt.WithFeatures())
 			require.NoError(t, err)
 

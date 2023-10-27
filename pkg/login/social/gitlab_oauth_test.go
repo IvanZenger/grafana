@@ -39,7 +39,7 @@ const (
 func TestSocialGitlab_UserInfo(t *testing.T) {
 	var nilPointer *bool
 
-	provider, err := NewGitLabProvider(map[string]any{"skip_org_role_sync": false}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	provider, err := NewGitLabProvider(map[string]any{"skip_org_role_sync": false}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 	require.NoError(t, err)
 
 	type conf struct {
@@ -358,7 +358,7 @@ func TestSocialGitlab_extractFromToken(t *testing.T) {
 				&setting.Cfg{
 					AutoAssignOrgRole:          "",
 					OAuthSkipOrgRoleUpdateSync: false,
-				}, featuremgmt.WithFeatures())
+				}, nil, featuremgmt.WithFeatures())
 
 			require.NoError(t, err)
 
@@ -450,7 +450,7 @@ func TestSocialGitlab_GetGroupsNextPage(t *testing.T) {
 	defer mockServer.Close()
 
 	// Create a SocialGitlab instance with the mock server URL
-	s, err := NewGitLabProvider(map[string]any{"api_url": mockServer.URL}, &setting.Cfg{}, featuremgmt.WithFeatures())
+	s, err := NewGitLabProvider(map[string]any{"api_url": mockServer.URL}, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 	require.NoError(t, err)
 
 	// Call getGroups and verify that it returns all groups

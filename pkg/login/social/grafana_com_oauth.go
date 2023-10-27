@@ -28,7 +28,7 @@ type OrgRecord struct {
 	Login string `json:"login"`
 }
 
-func NewGrafanaComProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialGrafanaCom, error) {
+func NewGrafanaComProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager) (*SocialGrafanaCom, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func NewGrafanaComProvider(settings map[string]any, cfg *setting.Cfg, features *
 
 	config := createOAuthConfig(info, cfg, grafanaComProviderName)
 	provider := &SocialGrafanaCom{
-		SocialBase:           newSocialBase(grafanaComProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:           newSocialBase(grafanaComProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		url:                  cfg.GrafanaComURL,
 		allowedOrganizations: util.SplitString(info.Extra["allowed_organizations"]),
 		skipOrgRoleSync:      cfg.GrafanaComSkipOrgRoleSync,

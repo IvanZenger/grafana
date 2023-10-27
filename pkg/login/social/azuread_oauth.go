@@ -64,7 +64,7 @@ type keySetJWKS struct {
 	jose.JSONWebKeySet
 }
 
-func NewAzureADProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager, cache remotecache.CacheStorage) (*SocialAzureAD, error) {
+func NewAzureADProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager, cache remotecache.CacheStorage) (*SocialAzureAD, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func NewAzureADProvider(settings map[string]any, cfg *setting.Cfg, features *fea
 
 	config := createOAuthConfig(info, cfg, azureADProviderName)
 	provider := &SocialAzureAD{
-		SocialBase:           newSocialBase(azureADProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:           newSocialBase(azureADProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		cache:                cache,
 		allowedOrganizations: util.SplitString(info.Extra["allowed_organizations"]),
 		forceUseGraphAPI:     mustBool(info.Extra["force_use_graph_api"], false),

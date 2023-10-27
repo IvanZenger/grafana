@@ -247,7 +247,7 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			}, &setting.Cfg{
 				AutoAssignOrgRole:     tt.autoAssignOrgRole,
 				GitHubSkipOrgRoleSync: tt.settingSkipOrgRoleSync,
-			}, featuremgmt.WithFeatures())
+			}, nil, featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
 			token := &oauth2.Token{
@@ -311,7 +311,7 @@ func TestSocialGitHub_InitializeExtraFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := NewGitHubProvider(tc.settings, &setting.Cfg{}, featuremgmt.WithFeatures())
+			s, err := NewGitHubProvider(tc.settings, &setting.Cfg{}, nil, featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
 			require.Equal(t, tc.want.teamIds, s.teamIds)

@@ -195,6 +195,7 @@ func TestSocialGoogle_retrieveGroups(t *testing.T) {
 					AutoAssignOrgRole:     "",
 					GoogleSkipOrgRoleSync: false,
 				},
+				nil,
 				featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
@@ -647,6 +648,7 @@ func TestSocialGoogle_UserInfo(t *testing.T) {
 				&setting.Cfg{
 					GoogleSkipOrgRoleSync: tt.fields.skipOrgRoleSync,
 				},
+				nil,
 				featuremgmt.WithFeatures())
 			require.NoError(t, err)
 

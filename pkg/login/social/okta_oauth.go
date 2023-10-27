@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -43,7 +44,7 @@ type OktaClaims struct {
 	Name              string `json:"name"`
 }
 
-func NewOktaProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialOkta, error) {
+func NewOktaProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager) (*SocialOkta, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -51,7 +52,7 @@ func NewOktaProvider(settings map[string]any, cfg *setting.Cfg, features *featur
 
 	config := createOAuthConfig(info, cfg, oktaProviderName)
 	provider := &SocialOkta{
-		SocialBase:    newSocialBase(oktaProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:    newSocialBase(oktaProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		apiUrl:        info.ApiUrl,
 		allowedGroups: info.AllowedGroups,
 		// FIXME: Move skipOrgRoleSync to OAuthInfo

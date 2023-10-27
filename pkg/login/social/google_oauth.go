@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -36,7 +37,7 @@ type googleUserData struct {
 	rawJSON       []byte `json:"-"`
 }
 
-func NewGoogleProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialGoogle, error) {
+func NewGoogleProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager) (*SocialGoogle, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -44,7 +45,7 @@ func NewGoogleProvider(settings map[string]any, cfg *setting.Cfg, features *feat
 
 	config := createOAuthConfig(info, cfg, googleProviderName)
 	provider := &SocialGoogle{
-		SocialBase:      newSocialBase(googleProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:      newSocialBase(googleProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		hostedDomain:    info.HostedDomain,
 		apiUrl:          info.ApiUrl,
 		skipOrgRoleSync: cfg.GoogleSkipOrgRoleSync,

@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -49,7 +50,7 @@ type userData struct {
 	IsGrafanaAdmin *bool             `json:"-"`
 }
 
-func NewGitLabProvider(settings map[string]any, cfg *setting.Cfg, features *featuremgmt.FeatureManager) (*SocialGitlab, error) {
+func NewGitLabProvider(settings map[string]any, cfg *setting.Cfg, orgService org.Service, features *featuremgmt.FeatureManager) (*SocialGitlab, error) {
 	info, err := createOAuthInfoFromKeyValues(settings)
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func NewGitLabProvider(settings map[string]any, cfg *setting.Cfg, features *feat
 
 	config := createOAuthConfig(info, cfg, gitlabProviderName)
 	provider := &SocialGitlab{
-		SocialBase:      newSocialBase(gitlabProviderName, config, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
+		SocialBase:      newSocialBase(gitlabProviderName, config, orgService, info, cfg.AutoAssignOrgRole, cfg.OAuthSkipOrgRoleUpdateSync, *features),
 		apiUrl:          info.ApiUrl,
 		skipOrgRoleSync: cfg.GitLabSkipOrgRoleSync,
 		// FIXME: Move skipOrgRoleSync to OAuthInfo
