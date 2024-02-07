@@ -30,7 +30,8 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 		settingSkipOrgRoleSync  bool
 		allowAssignGrafanaAdmin bool
 		RoleAttributePath       string
-		OrgRolesAttributePath   string
+		OrgAttributePath        string
+		OrgMapping              []string
 		ExpectedEmail           string
 		ExpectedRole            roletype.RoleType
 		ExpectedOrgRoles        map[int64]roletype.RoleType
@@ -86,10 +87,10 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 			wantErr:              false,
 		},
 		{
-			name:                  "Should give org roles from JSON and email from id token",
-			userRawJSON:           `{ "email": "okta-octopus@grafana.com", "orgs": ["Org 3", "Org 4", "Another Org"] }`,
-			RoleAttributePath:     "'None'",
-			OrgRolesAttributePath: `orgs[?starts_with(@, 'Org ')][{"OrgName": @, "Role": 'Editor'}][]`,
+			name:             "Should give org roles from JSON and email from id token",
+			userRawJSON:      `{ "email": "okta-octopus@grafana.com", "orgs": ["Org 3", "Org 4", "Another Org"] }`,
+			OrgAttributePath: "orgs",
+			OrgMapping:       []string{"Org 4:Org 4:Editor"},
 			OAuth2Extra: map[string]any{
 				// {
 				// "email": "okto.octopus@test.com"
@@ -122,7 +123,8 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 				map[string]any{
 					"api_url":                    server.URL + "/user",
 					"role_attribute_path":        tt.RoleAttributePath,
-					"org_roles_attribute_path":   tt.OrgRolesAttributePath,
+					"org_attribute_path":         tt.OrgAttributePath,
+					"org_mapping":                tt.OrgMapping,
 					"allow_assign_grafana_admin": tt.allowAssignGrafanaAdmin,
 					"skip_org_role_sync":         tt.settingSkipOrgRoleSync,
 				},
@@ -131,7 +133,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 					AutoAssignOrgRole:          tt.autoAssignOrgRole,
 					OAuthSkipOrgRoleUpdateSync: false,
 				},
-				&orgtest.FakeOrgService{ExpectedOrg: &org.Org{ID: 4}},
+				&orgtest.FakeOrgService{ExpectedOrgs: []*org.OrgDTO{{ID: 4, Name: "Org 4"}}, ExpectedError: org.ErrOrgNotFound},
 				featuremgmt.WithFeatures())
 			require.NoError(t, err)
 

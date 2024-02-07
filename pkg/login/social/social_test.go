@@ -8,6 +8,7 @@ import (
 	"github.com/grafana/grafana/pkg/models/roletype"
 	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/org/orgtest"
+	"github.com/grafana/grafana/pkg/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,63 +26,68 @@ func TestExtractOrgRolesFromRaw(t *testing.T) {
 		ctx := context.TODO()
 
 		tests := []struct {
-			name                  string
-			orgRolesAttributePath string
-			rawJSON               string
-			expectedError         string
-			expectedOrgRoles      map[int64]org.RoleType
-			WarnLogs              logtest.Logs
+			name             string
+			orgAttributePath string
+			orgMapping       string
+			rawJSON          string
+			expectedError    string
+			expectedOrgRoles map[int64]org.RoleType
+			WarnLogs         logtest.Logs
 		}{
 			{
-				name:                  "Given role claim and valid JMES path, returns valid mapping",
-				orgRolesAttributePath: `info.roles[?starts_with(@, 'org_')][{"OrgName": @, "Role": 'Editor'}][]`,
-				rawJSON:               `{"info": {"roles": ["org_foo", "org_bar","another_org"]}}`,
-				expectedOrgRoles:      map[int64]roletype.RoleType{11: "Editor", 12: "Editor"},
+				name:             "Given role claim and valid path, returns valid mapping",
+				orgAttributePath: "info.roles",
+				orgMapping:       `org_foo:org_foo:Editor org_bar:org_bar:Viewer org_baz:org_baz:Admin`,
+				rawJSON:          `{"info": {"roles": ["org_foo", "org_bar","another_org"]}}`,
+				expectedOrgRoles: map[int64]roletype.RoleType{11: "Editor", 12: "Viewer"},
 			},
 			{
-				name:                  "Given several role claims and valid JMES path, last wins",
-				orgRolesAttributePath: `[viewerGroups[*][{"OrgName": @, "Role": 'Viewer'}], editorGroups[*][{"OrgName": @, "Role": 'Editor'}]][][]`,
-				rawJSON:               `{"viewerGroups": ["org_foo", "org_bar"], "editorGroups": ["org_bar", "org_baz"]}`,
-				expectedOrgRoles:      map[int64]roletype.RoleType{11: "Viewer", 12: "Editor", 13: "Editor"},
+				name:             "Given org mapping with wildcard and valid path, returns valid mapping",
+				orgAttributePath: "info.roles",
+				orgMapping:       `*:org_foo:Editor org_bar:org_bar:Viewer org_baz:org_baz:Admin`,
+				rawJSON:          `{"info": {"roles": ["org_bar","another_org"]}}`,
+				expectedOrgRoles: map[int64]roletype.RoleType{11: "Editor", 12: "Viewer"},
 			},
 			{
-				name:                  "Given invalid JMES path, returns an error",
-				orgRolesAttributePath: `[`,
-				rawJSON:               `{}`,
-				expectedError:         `failed to search user info JSON response with provided path: "[": SyntaxError: Incomplete expression`,
+				name:             "Give several mapping configuration for one unit, last wins",
+				orgAttributePath: "info.roles",
+				orgMapping:       `org_foo:org_foo:Editor org_foo:org_foo:Viewer org_baz:org_baz:Admin`,
+				rawJSON:          `{"info": {"roles": ["org_foo", "org_baz"]}}`,
+				expectedOrgRoles: map[int64]roletype.RoleType{11: "Viewer", 13: "Admin"},
 			},
 			{
-				name:                  "With invalid role, returns an error",
-				orgRolesAttributePath: `[{"OrgName": 'org_foo', "Role": 'invalid role'}]`,
-				rawJSON:               `{}`,
-				expectedError:         "invalid role value: Invalid Role",
+				name:             "Given invalid JMES path, returns an error",
+				orgAttributePath: "[",
+				orgMapping:       ``,
+				rawJSON:          `{}`,
+				expectedError:    `failed to search user info JSON response with provided path: "[": SyntaxError: Incomplete expression`,
 			},
 			{
-				name:                  "With unfound org, skip and continue",
-				orgRolesAttributePath: `[{"OrgName": 'invalid org', "Role": 'Editor'}, {"OrgName": 'org_bar', "Role": 'Viewer'}]`,
-				rawJSON:               `{}`,
-				expectedOrgRoles:      map[int64]roletype.RoleType{12: "Viewer"},
+				name:             "With invalid role, returns an error",
+				orgAttributePath: "info.roles",
+				orgMapping:       `org_foo:org_foo:Editor  org_bar:org_bar:invalid_role `,
+				rawJSON:          `{"info": {"roles": ["org_foo", "org_bar"]}}`,
+				expectedError:    "invalid role type: invalid_role",
+			},
+			{
+				name:             "With unfound org, skip and continue",
+				orgAttributePath: "info.roles",
+				orgMapping:       `org_foo:invalid_org:Editor  org_bar:org_bar:Viewer`,
+				rawJSON:          `{"info": {"roles": ["org_foo","org_bar"]}}`,
+				expectedOrgRoles: map[int64]roletype.RoleType{12: "Viewer"},
 				WarnLogs: logtest.Logs{
 					Calls:   1,
 					Message: "Unknown organization. Skipping.",
-					Ctx:     []interface{}{"config_option", "[{\"OrgName\": 'invalid org', \"Role\": 'Editor'}, {\"OrgName\": 'org_bar', \"Role\": 'Viewer'}]", "mapping", "{0 invalid org Editor}"}},
-			},
-			{
-				name:                  "With invalid org id, skip and continue",
-				orgRolesAttributePath: `[{"OrgId": '-1', "Role": 'Editor'}, {"OrgName": 'org_bar', "Role": 'Viewer'}]`,
-				rawJSON:               `{}`,
-				expectedOrgRoles:      map[int64]roletype.RoleType{12: "Viewer"},
-				WarnLogs: logtest.Logs{
-					Calls:   1,
-					Message: "Incorrect mapping found. Skipping.",
-					Ctx:     []interface{}{"config_option", "[{\"OrgId\": '-1', \"Role\": 'Editor'}, {\"OrgName\": 'org_bar', \"Role\": 'Viewer'}]", "mapping", "{-1  Editor}"}},
+					Ctx:     []interface{}{"config_option", "info.roles", "mapping", "{org_foo 0 invalid_org Editor}"}},
 			},
 		}
 
 		for _, test := range tests {
 			logger := &logtest.Fake{}
 			s := SocialBase{log: logger, orgService: orgService}
-			s.orgRolesAttributePath = test.orgRolesAttributePath
+			s.orgAttributePath = test.orgAttributePath
+			s.orgMapping = util.SplitString(test.orgMapping)
+
 			t.Run(test.name, func(t *testing.T) {
 				orgRoles, err := s.extractOrgRolesFromRaw(ctx, []byte(test.rawJSON))
 				if test.expectedError == "" {

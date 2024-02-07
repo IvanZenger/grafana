@@ -127,7 +127,8 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 		settingSkipOrgRoleSync   bool
 		roleAttributePath        string
 		autoAssignOrgRole        string
-		orgRolesAttributePath    string
+		orgAttributePath         string
+		orgMapping               []string
 		want                     *BasicUserInfo
 		wantErr                  bool
 	}{
@@ -224,11 +225,12 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			},
 		},
 		{
-			name:                  "Handle Org Roles on ",
-			roleAttributePath:     "'None'",
-			orgRolesAttributePath: "[{\"OrgName\": 'Org 4', \"Role\": 'Editor'}]",
-			userRawJSON:           testGHUserJSON,
-			userTeamsRawJSON:      testGHUserTeamsJSON,
+			name:              "Handle Org Roles on ",
+			roleAttributePath: "'None'",
+			orgAttributePath:  "groups",
+			orgMapping:        []string{"@github/justice-league:Org 4:Editor"},
+			userRawJSON:       testGHUserJSON,
+			userTeamsRawJSON:  testGHUserTeamsJSON,
 			want: &BasicUserInfo{
 				Id:       "1",
 				Name:     "monalisa octocat",
@@ -260,15 +262,16 @@ func TestSocialGitHub_UserInfo(t *testing.T) {
 			defer server.Close()
 
 			s, err := NewGitHubProvider(map[string]any{
-				"allowed_organizations":    "",
-				"api_url":                  server.URL + "/user",
-				"team_ids":                 "",
-				"role_attribute_path":      tt.roleAttributePath,
-				"org_roles_attribute_path": tt.orgRolesAttributePath,
+				"allowed_organizations": "",
+				"api_url":               server.URL + "/user",
+				"team_ids":              "",
+				"role_attribute_path":   tt.roleAttributePath,
+				"org_attribute_path":    tt.orgAttributePath,
+				"org_mapping":           tt.orgMapping,
 			}, &setting.Cfg{
 				AutoAssignOrgRole:     tt.autoAssignOrgRole,
 				GitHubSkipOrgRoleSync: tt.settingSkipOrgRoleSync,
-			}, &orgtest.FakeOrgService{ExpectedOrg: &org.Org{ID: 4}}, featuremgmt.WithFeatures())
+			}, &orgtest.FakeOrgService{ExpectedOrgs: []*org.OrgDTO{{ID: 4, Name: "Org 4"}}, ExpectedError: org.ErrOrgNotFound}, featuremgmt.WithFeatures())
 			require.NoError(t, err)
 
 			token := &oauth2.Token{

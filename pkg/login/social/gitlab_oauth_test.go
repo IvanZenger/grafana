@@ -41,7 +41,7 @@ const (
 func TestSocialGitlab_UserInfo(t *testing.T) {
 	var nilPointer *bool
 
-	provider, err := NewGitLabProvider(map[string]any{"skip_org_role_sync": false}, &setting.Cfg{}, orgtest.NewOrgServiceFake(), featuremgmt.WithFeatures())
+	provider, err := NewGitLabProvider(map[string]any{"skip_org_role_sync": false}, &setting.Cfg{}, &orgtest.FakeOrgService{ExpectedOrgs: []*org.OrgDTO{{ID: 4, Name: "org_editor"}}, ExpectedError: org.ErrOrgNotFound}, featuremgmt.WithFeatures())
 	require.NoError(t, err)
 
 	type conf struct {
@@ -52,19 +52,20 @@ func TestSocialGitlab_UserInfo(t *testing.T) {
 	}
 
 	tests := []struct {
-		Name                  string
-		Cfg                   conf
-		UserRespBody          string
-		GroupsRespBody        string
-		GroupHeaders          map[string]string
-		RoleAttributePath     string
-		OrgRolesAttributePath string
-		ExpectedLogin         string
-		ExpectedEmail         string
-		ExpectedRole          org.RoleType
-		ExpectedOrgRoles      map[int64]org.RoleType
-		ExpectedGrafanaAdmin  *bool
-		ExpectedError         error
+		Name                 string
+		Cfg                  conf
+		UserRespBody         string
+		GroupsRespBody       string
+		GroupHeaders         map[string]string
+		RoleAttributePath    string
+		OrgAttributePath     string
+		OrgMapping           []string
+		ExpectedLogin        string
+		ExpectedEmail        string
+		ExpectedRole         org.RoleType
+		ExpectedOrgRoles     map[int64]org.RoleType
+		ExpectedGrafanaAdmin *bool
+		ExpectedError        error
 	}{
 		{
 			Name:           "Server Admin Allowed",
@@ -162,23 +163,25 @@ func TestSocialGitlab_UserInfo(t *testing.T) {
 			ExpectedError:     errRoleAttributePathNotSet,
 		},
 		{
-			Name:                  "Org Roles",
-			Cfg:                   conf{},
-			UserRespBody:          editorUserRespBody,
-			GroupsRespBody:        "[" + strings.Join([]string{editorGroup}, ",") + "]",
-			RoleAttributePath:     "'None'",
-			OrgRolesAttributePath: "[{\"OrgName\": 'Org 4', \"Role\": 'Editor'}]",
-			ExpectedLogin:         "gitlab-editor",
-			ExpectedEmail:         "gitlab-editor@example.org",
-			ExpectedRole:          "None",
-			ExpectedOrgRoles:      map[int64]roletype.RoleType{4: "Editor"},
-			ExpectedGrafanaAdmin:  nil,
+			Name:                 "Org Roles",
+			Cfg:                  conf{},
+			UserRespBody:         editorUserRespBody,
+			GroupsRespBody:       "[" + strings.Join([]string{editorGroup}, ",") + "]",
+			RoleAttributePath:    "'None'",
+			OrgAttributePath:     "groups",
+			OrgMapping:           []string{"editors:org_editor:Editor"},
+			ExpectedLogin:        "gitlab-editor",
+			ExpectedEmail:        "gitlab-editor@example.org",
+			ExpectedRole:         "None",
+			ExpectedOrgRoles:     map[int64]roletype.RoleType{4: "Editor"},
+			ExpectedGrafanaAdmin: nil,
 		},
 	}
 
 	for _, test := range tests {
 		provider.roleAttributePath = test.RoleAttributePath
-		provider.orgRolesAttributePath = test.OrgRolesAttributePath
+		provider.orgAttributePath = test.OrgAttributePath
+		provider.orgMapping = test.OrgMapping
 		provider.allowAssignGrafanaAdmin = test.Cfg.AllowAssignGrafanaAdmin
 		provider.autoAssignOrgRole = string(test.Cfg.AutoAssignOrgRole)
 		provider.roleAttributeStrict = test.Cfg.RoleAttributeStrict

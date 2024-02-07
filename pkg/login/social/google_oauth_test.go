@@ -220,7 +220,7 @@ func (f *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func TestSocialGoogle_UserInfo(t *testing.T) {
-	orgService := &orgtest.FakeOrgService{ExpectedOrg: &org.Org{ID: 4}}
+	orgService := &orgtest.FakeOrgService{ExpectedOrgs: []*org.OrgDTO{{ID: 4, Name: "org_test"}}, ExpectedError: org.ErrOrgNotFound}
 	cl := jwt.Claims{
 		Subject:   "88888888888888",
 		Issuer:    "issuer",
@@ -252,7 +252,8 @@ func TestSocialGoogle_UserInfo(t *testing.T) {
 		allowedGroups           []string
 		roleAttributePath       string
 		roleAttributeStrict     bool
-		orgRolesAttributePath   string
+		orgAttributePath        string
+		orgMapping              []string
 		allowAssignGrafanaAdmin bool
 		skipOrgRoleSync         bool
 	}
@@ -639,9 +640,10 @@ func TestSocialGoogle_UserInfo(t *testing.T) {
 		{
 			name: "org_roles from groups",
 			fields: fields{
-				Scopes:                []string{"https://www.googleapis.com/auth/cloud-identity.groups.readonly"},
-				roleAttributePath:     "'None'",
-				orgRolesAttributePath: `groups[?ends_with(@, '@google.com')][{"OrgName": @, "Role": 'Editor'}][]`,
+				Scopes:            []string{"https://www.googleapis.com/auth/cloud-identity.groups.readonly"},
+				roleAttributePath: "'None'",
+				orgAttributePath:  "groups",
+				orgMapping:        []string{"test-group@google.com:org_test:Editor"},
 			},
 			args: args{
 				token: tokenWithID,
@@ -688,7 +690,8 @@ func TestSocialGoogle_UserInfo(t *testing.T) {
 				"allow_sign_up":              false,
 				"role_attribute_path":        tt.fields.roleAttributePath,
 				"role_attribute_strict":      tt.fields.roleAttributeStrict,
-				"org_roles_attribute_path":   tt.fields.orgRolesAttributePath,
+				"org_attribute_path":         tt.fields.orgAttributePath,
+				"org_mapping":                tt.fields.orgMapping,
 				"allow_assign_grafana_admin": tt.fields.allowAssignGrafanaAdmin,
 			},
 				&setting.Cfg{

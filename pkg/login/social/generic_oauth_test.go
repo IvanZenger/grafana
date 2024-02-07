@@ -231,7 +231,7 @@ func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
 			"email_attribute_path": "email",
 		},
 		&setting.Cfg{},
-		&orgtest.FakeOrgService{ExpectedOrg: &org.Org{ID: 4}},
+		&orgtest.FakeOrgService{ExpectedOrgs: []*org.OrgDTO{{ID: 4, Name: "org_dev"}, {ID: 2, Name: "org_engineering"}}},
 		featuremgmt.WithFeatures(),
 	)
 	require.NoError(t, err)
@@ -243,7 +243,8 @@ func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
 		ResponseBody            any
 		OAuth2Extra             any
 		RoleAttributePath       string
-		OrgRolesAttributePath   string
+		OrgAttributePath        string
+		OrgMapping              []string
 		ExpectedEmail           string
 		ExpectedRole            org.RoleType
 		ExpectedOrgRoles        map[int64]org.RoleType
@@ -467,18 +468,21 @@ func TestUserInfoSearchesForEmailAndRole(t *testing.T) {
 			ResponseBody:            map[string]any{"info": map[string]any{"roles": []string{"engineering", "SRE"}}},
 			OAuth2Extra:             map[string]any{"id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImpvaG4uZG9lQGV4YW1wbGUuY29tIiwiaW5mbyI6eyJyb2xlcyI6WyJkZXYiLCJlbmdpbmVlcmluZyJdfX0.RmmQfv25eXb4p3wMrJsvXfGQ6EXhGtwRXo6SlCFHRNg"},
 			RoleAttributePath:       "'Viewer'",
-			OrgRolesAttributePath:   "[{\"OrgId\": '2', \"Role\": 'Editor'},{\"OrgName\": 'Org 4', \"Role\": 'Viewer'}]",
-			ExpectedEmail:           "john.doe@example.com",
-			ExpectedRole:            "Viewer",
-			ExpectedOrgRoles:        map[int64]roletype.RoleType{2: org.RoleEditor, 4: org.RoleViewer},
-			ExpectedError:           nil,
-			ExpectedGrafanaAdmin:    nil,
+			//OrgRolesAttributePath:   "[{\"OrgId\": '2', \"Role\": 'Editor'},{\"OrgName\": 'Org 4', \"Role\": 'Viewer'}]",
+			OrgAttributePath:     "info.roles",
+			OrgMapping:           []string{"engineering:org_dev:Viewer", "engineering:org_engineering:Editor"},
+			ExpectedEmail:        "john.doe@example.com",
+			ExpectedRole:         "Viewer",
+			ExpectedOrgRoles:     map[int64]roletype.RoleType{2: org.RoleEditor, 4: org.RoleViewer},
+			ExpectedError:        nil,
+			ExpectedGrafanaAdmin: nil,
 		},
 	}
 
 	for _, test := range tests {
 		provider.roleAttributePath = test.RoleAttributePath
-		provider.orgRolesAttributePath = test.OrgRolesAttributePath
+		provider.orgAttributePath = test.OrgAttributePath
+		provider.orgMapping = test.OrgMapping
 		provider.allowAssignGrafanaAdmin = test.AllowAssignGrafanaAdmin
 		provider.skipOrgRoleSync = test.SkipOrgRoleSync
 

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"github.com/grafana/grafana/pkg/build/stringutil"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/remotecache"
 	"github.com/grafana/grafana/pkg/infra/usagestats"
@@ -76,7 +77,8 @@ type OAuthInfo struct {
 	UsePKCE                 bool              `mapstructure:"use_pkce"`
 	UseRefreshToken         bool              `mapstructure:"use_refresh_token"`
 	Extra                   map[string]string `mapstructure:",remain"`
-	OrgRolesAttributePath   string            `mapstructure:"org_roles_attribute_path"`
+	OrgAttributePath        string            `mapstructure:"org_attribute_path"`
+	OrgMapping              []string          `mapstructure:"org_mapping"`
 }
 
 func ProvideService(cfg *setting.Cfg,
@@ -168,16 +170,18 @@ type SocialBase struct {
 	allowedDomains          []string
 	allowedGroups           []string
 
-	roleAttributePath     string
-	roleAttributeStrict   bool
-	orgRolesAttributePath string
-	autoAssignOrgRole     string
-	skipOrgRoleSync       bool
-	features              featuremgmt.FeatureManager
-	useRefreshToken       bool
+	roleAttributePath   string
+	roleAttributeStrict bool
+	orgAttributePath    string
+	orgMapping          []string
+	autoAssignOrgRole   string
+	skipOrgRoleSync     bool
+	features            featuremgmt.FeatureManager
+	useRefreshToken     bool
 }
 
 type OrgRoleMapping struct {
+	Mapping string            `json:",string"`
 	OrgID   int64             `json:",string"`
 	OrgName string            `type:"string"`
 	Role    roletype.RoleType `type:"string" required:"true"`
@@ -231,7 +235,8 @@ func newSocialBase(name string,
 		allowedGroups:           info.AllowedGroups,
 		roleAttributePath:       info.RoleAttributePath,
 		roleAttributeStrict:     info.RoleAttributeStrict,
-		orgRolesAttributePath:   info.OrgRolesAttributePath,
+		orgAttributePath:        info.OrgAttributePath,
+		orgMapping:              info.OrgMapping,
 		autoAssignOrgRole:       autoAssignOrgRole,
 		skipOrgRoleSync:         skipOrgRoleSync,
 		features:                features,
@@ -311,8 +316,9 @@ func (s *SocialBase) searchRole(rawJSON []byte, groups []string) (org.RoleType, 
 }
 
 func (s *SocialBase) extractOrgRoles(ctx context.Context, rawJSON []byte, groups []string) (map[int64]org.RoleType, error) {
-	if s.orgRolesAttributePath != "" {
+	if s.orgMapping != nil && s.orgAttributePath != "" {
 		orgRoles, err := s.extractOrgRolesFromRaw(ctx, rawJSON)
+
 		if err != nil || len(orgRoles) > 0 {
 			return orgRoles, err
 		}
@@ -325,37 +331,62 @@ func (s *SocialBase) extractOrgRoles(ctx context.Context, rawJSON []byte, groups
 }
 
 func (s *SocialBase) extractOrgRolesFromRaw(ctx context.Context, rawJSON []byte) (map[int64]org.RoleType, error) {
-	val, err := s.searchJSONForAttr(s.orgRolesAttributePath, rawJSON)
+	groups, err := s.searchJSONForStringArrayAttr(s.orgAttributePath, rawJSON)
 	if err != nil {
 		return nil, err
 	}
-	orgRolesRaw, err := json.Marshal(val)
+
+	orgRoleMappings, err := s.resolveOrgMapping(groups)
 	if err != nil {
 		return nil, err
 	}
-	orgRoleMappings := []OrgRoleMapping{}
-	err = json.Unmarshal(orgRolesRaw, &orgRoleMappings)
-	if err != nil {
-		return nil, err
-	}
+
 	orgRoles := make(map[int64]org.RoleType, 0)
 	for _, orgRoleMapping := range orgRoleMappings {
+
 		if orgRoleMapping.OrgID == 0 && orgRoleMapping.OrgName != "" {
 			getOrgQuery := &org.GetOrgByNameQuery{Name: orgRoleMapping.OrgName}
 			res, err := s.orgService.GetByName(ctx, getOrgQuery)
+
 			if err != nil {
 				// ignore not existing org
-				s.log.Warn("Unknown organization. Skipping.", "config_option", s.orgRolesAttributePath, "mapping", fmt.Sprintf("%v", orgRoleMapping))
+				s.log.Warn("Unknown organization. Skipping.", "config_option", s.orgAttributePath, "mapping", fmt.Sprintf("%v", orgRoleMapping))
 				continue
 			}
 			orgRoleMapping.OrgID = res.ID
 		} else if orgRoleMapping.OrgID <= 0 {
-			s.log.Warn("Incorrect mapping found. Skipping.", "config_option", s.orgRolesAttributePath, "mapping", fmt.Sprintf("%v", orgRoleMapping))
+			s.log.Warn("Incorrect mapping found. Skipping.", "config_option", s.orgAttributePath, "mapping", fmt.Sprintf("%v", orgRoleMapping))
 			continue
 		}
 		orgRoles[orgRoleMapping.OrgID] = orgRoleMapping.Role
 	}
+
 	return orgRoles, nil
+}
+
+func (s *SocialBase) resolveOrgMapping(groups []string) ([]OrgRoleMapping, error) {
+	orgRoleMappings := make([]OrgRoleMapping, 0, len(s.orgMapping))
+
+	for _, m := range s.orgMapping {
+		parts := strings.SplitN(m, ":", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid tag format, expected 3 parts but got %d", len(parts))
+		}
+
+		if stringutil.Contains(groups, parts[0]) || parts[0] == "*" {
+			if !roletype.RoleType(parts[2]).IsValid() {
+				return nil, fmt.Errorf("invalid role type: %s", parts[2])
+			}
+
+			orgRoleMappings = append(orgRoleMappings, OrgRoleMapping{
+				Mapping: parts[0],
+				OrgName: parts[1],
+				Role:    roletype.RoleType(parts[2]),
+			})
+		}
+	}
+
+	return orgRoleMappings, nil
 }
 
 // defaultRole returns the default role for the user based on the autoAssignOrgRole setting
